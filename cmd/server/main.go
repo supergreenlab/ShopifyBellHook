@@ -73,6 +73,8 @@ func OrderPaidHandle(w http.ResponseWriter, req *http.Request) {
 	fmt.Println("Order handle done")
 }
 
+var sessionCache = map[string]interface{}{}
+
 func CrispReceivedHandle(w http.ResponseWriter, req *http.Request) {
 	d := map[string]interface{}{}
 	decoder := json.NewDecoder(req.Body)
@@ -81,8 +83,18 @@ func CrispReceivedHandle(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	receivedStreamer.Seek(0)
-	speaker.Play(beep.Resample(4, receivedSampleRate, sampleRate, receivedStreamer))
+	data := d["data"].(map[string]interface{})
+	sessionId, ok := data["session_id"].(string)
+	if ok == false {
+		w.Write([]byte("NOK"))
+		fmt.Println("Crisp received handle: missing session_id")
+		return
+	}
+	if _, ok := sessionCache[sessionId]; ok != true {
+		receivedStreamer.Seek(0)
+		speaker.Play(beep.Resample(4, receivedSampleRate, sampleRate, receivedStreamer))
+		sessionCache[data["session_id"].(string)] = true
+	}
 
 	w.Write([]byte("OK"))
 	fmt.Println("Crisp received handle done")
