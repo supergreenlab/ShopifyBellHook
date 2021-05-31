@@ -35,6 +35,11 @@ import (
 )
 
 var moneyStreamer beep.StreamSeekCloser
+var moneySampleRate beep.SampleRate
+var receivedStreamer beep.StreamSeekCloser
+var receivedSampleRate beep.SampleRate
+
+var sampleRate = beep.SampleRate(22050)
 
 // formatRequest generates ascii representation of a request
 func formatRequest(r *http.Request) string {
@@ -62,14 +67,30 @@ func OrderPaidHandle(w http.ResponseWriter, req *http.Request) {
 	}
 
 	moneyStreamer.Seek(0)
-	speaker.Play(moneyStreamer)
+	speaker.Play(beep.Resample(4, moneySampleRate, sampleRate, moneyStreamer))
 
 	w.Write([]byte("OK"))
 	fmt.Println("Order handle done")
 }
 
-func main() {
-	f, err := os.Open("/usr/local/share/shopifybellhook/money.wav")
+func CrispReceivedHandle(w http.ResponseWriter, req *http.Request) {
+	d := map[string]interface{}{}
+	decoder := json.NewDecoder(req.Body)
+	if err := decoder.Decode(&d); err != nil {
+		http.Error(w, fmt.Sprintf("Json parse error %q", err), http.StatusBadRequest)
+		return
+	}
+
+	receivedStreamer.Seek(0)
+	speaker.Play(beep.Resample(4, receivedSampleRate, sampleRate, receivedStreamer))
+
+	w.Write([]byte("OK"))
+	fmt.Println("Crisp received handle done")
+
+}
+
+func openStream(path string) (beep.StreamSeekCloser, beep.SampleRate) {
+	f, err := os.Open(path)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -78,12 +99,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	moneyStreamer = st
 
-	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+	return st, format.SampleRate
+}
+
+func main() {
+
+	moneyStreamer, moneySampleRate = openStream("/usr/local/share/shopifybellhook/money.wav")
+	receivedStreamer, receivedSampleRate = openStream("/usr/local/share/shopifybellhook/received.wav")
+
+	speaker.Init(sampleRate, sampleRate.N(time.Second/10))
 
 	http.HandleFunc("/order/paid", OrderPaidHandle)
-	err = http.ListenAndServe(":4200", nil)
+	http.HandleFunc("/crisp/received", CrispReceivedHandle)
+
+	err := http.ListenAndServe(":4200", nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
